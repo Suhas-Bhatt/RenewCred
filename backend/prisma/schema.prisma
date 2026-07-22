@@ -1,0 +1,110 @@
+// RenewCred CMS — Prisma schema
+// Engineering decision: content blocks are page-scoped rows with an ordered
+// position and a typed JSON payload. Internal structure that is naturally
+// recursive (nested lists, table rows/cols, rich-text marks) lives INSIDE
+// that JSON payload rather than as further relational rows. This keeps block
+// re-ordering and page assembly to a single indexed query, while each block
+// renderer owns validating/rendering its own nested shape. Documented in
+// README under "Content model assumptions".
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  EDITOR
+}
+
+enum PageStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum BlockType {
+  HEADING
+  PARAGRAPH
+  IMAGE
+  LIST
+  TABLE
+  MATH
+  CODE
+  QUOTE
+  DIVIDER
+  CALLOUT
+}
+
+model Admin {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         AdminRole @default(EDITOR)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  pages        Page[]        @relation("PageAuthor")
+  refreshTokens RefreshToken[]
+
+  @@map("admins")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  adminId   String
+  admin     Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("refresh_tokens")
+}
+
+model Page {
+  id              String     @id @default(cuid())
+  slug            String     @unique
+  title           String
+  status          PageStatus @default(DRAFT)
+  seoTitle        String?
+  seoDescription  String?
+  ogImage         String?
+  createdById     String?
+  createdBy       Admin?     @relation("PageAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  blocks          Block[]
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  publishedAt     DateTime?
+
+  @@map("pages")
+}
+
+model Block {
+  id        String    @id @default(cuid())
+  pageId    String
+  page      Page      @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  type      BlockType
+  order     Int
+  data      Json
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([pageId, order])
+  @@map("blocks")
+}
+
+model Media {
+  id        String   @id @default(cuid())
+  url       String
+  filename  String
+  mimeType  String
+  size      Int
+  createdAt DateTime @default(now())
+
+  @@map("media")
+}
